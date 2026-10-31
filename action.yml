@@ -1,0 +1,72 @@
+name: AccessibilityBrief scan
+description: Scan a site for accessibility problems with AccessibilityBrief and fail the job on serious issues or a low score.
+author: AccessibilityBrief
+branding:
+  icon: check-circle
+  color: orange
+inputs:
+  url:
+    description: Address or site id of a site in your AccessibilityBrief workspace.
+    required: true
+  api-key:
+    description: AccessibilityBrief API key with the read and scan scopes. Store it as a secret.
+    required: true
+  fail-on:
+    description: Fail if an issue is at least this severe (critical, serious, moderate or minor). Leave empty to never fail on severity.
+    required: false
+    default: ''
+  min-score:
+    description: Fail if the automated score is lower than this (0 to 100). Leave empty for no minimum.
+    required: false
+    default: ''
+  locale:
+    description: Language of issue titles in the log and job summary (en or de).
+    required: false
+    default: 'en'
+  timeout:
+    description: Minutes to wait for the scan to finish.
+    required: false
+    default: '20'
+  cli-version:
+    description: Version of the accessibilitybrief command line tool on npm.
+    required: false
+    default: '1'
+  api-url:
+    description: Base address of AccessibilityBrief. Only change this if you were told to.
+    required: false
+    default: 'https://accessibilitybrief.com'
+runs:
+  using: composite
+  steps:
+    # Use the runner's Node.js when it is new enough, so this step does not change Node for the rest of the job.
+    - name: Check Node.js
+      id: node
+      shell: bash
+      run: |
+        if command -v node >/dev/null && node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>18||(a===18&&b>=17)?0:1)'; then
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Set up Node.js
+      if: steps.node.outputs.ok != 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - name: Scan
+      shell: bash
+      env:
+        ACCESSIBILITYBRIEF_API_KEY: ${{ inputs.api-key }}
+        ACCESSIBILITYBRIEF_API_URL: ${{ inputs.api-url }}
+        AB_URL: ${{ inputs.url }}
+        AB_FAIL_ON: ${{ inputs.fail-on }}
+        AB_MIN_SCORE: ${{ inputs.min-score }}
+        AB_LOCALE: ${{ inputs.locale }}
+        AB_TIMEOUT: ${{ inputs.timeout }}
+        AB_CLI_VERSION: ${{ inputs.cli-version }}
+      run: |
+        # Inputs reach the command through the environment, never by pasting them into the script.
+        args=(scan "$AB_URL" --locale "$AB_LOCALE" --timeout "$AB_TIMEOUT")
+        if [ -n "$AB_FAIL_ON" ]; then args+=(--fail-on "$AB_FAIL_ON"); fi
+        if [ -n "$AB_MIN_SCORE" ]; then args+=(--min-score "$AB_MIN_SCORE"); fi
+        npx --yes "accessibilitybrief@${AB_CLI_VERSION}" "${args[@]}"
